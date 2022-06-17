@@ -26,7 +26,7 @@ type Options = GetNewsForAppOptions & UserStatsForGameOptions & OwnedGamesOption
     addr?: string
     appid?: number;
     gameid?: number;
-    steamids?: [string];
+    steamids?: string[];
     steamid?: string;
     relationship?: RelationShip;
     lang?: string;
@@ -144,11 +144,11 @@ export default class Steam {
     
     /**
      * Returns basic profile information for a list of 64-bit Steam IDs.
-     * @param {[string]!} steamids Comma-delimited list of 64 bit Steam IDs to return profile information for. Up to 100 Steam IDs can be requested.
+     * @param {string[]!} steamids Comma-delimited list of 64 bit Steam IDs to return profile information for. Up to 100 Steam IDs can be requested.
      * @param {Format?} format
      * @return {Output}
      */
-    async GetPlayerSummaries(steamids: [string], format?: Format): Output {
+    async GetPlayerSummaries(steamids: string[], format?: Format): Output {
         const options: Options = { steamids: steamids, format: format };
         let url = this.url("ISteamUser", "GetPlayerSummaries");
         url = this.searchParams(url, options, true);
