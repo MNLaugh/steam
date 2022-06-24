@@ -1,248 +1,365 @@
-import { request } from "./request.ts";
+import { fail, ok } from "./deps.ts";
+import type { TResultAsync } from "./deps.ts";
 
-export type RelationShip = "all" | "friend";
-export type Format = "json" | "xml";
-export type BaseOptions = {
-    key?: string;
-    requestInit?: RequestInit;
-}
-export type FormatOption = { format?: Format };
-export type GetNewsForAppOptions = BaseOptions & {
-    count?: number,
-    maxlength?: number
-} & FormatOption;
-export type PlayerAchievementsOptions = BaseOptions & {
-    L?: string
-} & FormatOption
-export type UserStatsForGameOptions = PlayerAchievementsOptions;
-export type OwnedGamesOptions = BaseOptions & {
-    includeAppinfo?: boolean,
-    includePlayedFreeGames?: boolean
-} & FormatOption;
-export type RecentlyPlayedGamesOptions = BaseOptions & {
-    count?: number;
-} & FormatOption;
-type Options = GetNewsForAppOptions & UserStatsForGameOptions & OwnedGamesOptions & RecentlyPlayedGamesOptions & {
-    addr?: string
-    appid?: number;
-    gameid?: number;
-    steamids?: string[];
-    steamid?: string;
-    relationship?: RelationShip;
-    lang?: string;
-}
+import type {
+  httpResponse,
+  BaseOptions,
+  GetServersAtAddressOptions,
+  GetNewsForAppOptions,
+  RelationShip,
+  PlayerAchievementsOptions,
+  UserStatsForGameOptions,
+  OwnedGamesOptions,
+  RecentlyPlayedGamesOptions,
+  Options,
+  Player,
+  App,
+  Server,
+  News,
+  Achievement,
+  Friend,
+  PlayerAchievement,
+  PlayerStat,
+  OwnedGames,
+  RecentlyPlayedGames,
+} from "./types.ts";
 
-type Output = Promise<string | JSON | undefined>
-
+const api = "http://api.steampowered.com";
+const version = "v0002"
 const apiKeyError = new Error("You must add your steam api key in the instance or as options when calling this function!");
+
+function createUrl(Interface: string, Method: string, Version: string = version): URL {
+  return new URL(`${api}/${Interface}/${Method}/${Version}`);
+}
+
 export default class Steam {
-    private b = "http://api.steampowered.com";
-    private v = "v0002";
-    private defaultkey?: string;
-    private defaultRequestInit: RequestInit;
-    constructor(defaultkey?: string) {
-        this.defaultkey = defaultkey;
-        this.defaultRequestInit = {
-            method: 'GET',
-            headers: new Headers()
-        };
-    }
+  apikey?: string;
+  constructor(defaultkey?: string, private defaultRequestInit: RequestInit = {
+      method: 'GET',
+      headers: new Headers()
+  }) {
+      this.apikey = defaultkey;
+  }
 
-    private getRequestInit(options?: Options) {
-        return (options && options.requestInit) ? options.requestInit : this.defaultRequestInit;
-    }
+  /**
+   * This function creates a new instance of the Steam class and returns it.
+   * @param {string} [defaultkey] - The default key to use for all requests.
+   * @returns A new instance of the Steam class.
+   */
+  static create(defaultkey?: string) {
+      return new Steam(defaultkey);
+  }
 
-    private getKey(options?: Options) {
-        return (options && options.key) ? options.key : this.defaultkey;
-    }
-
-    private searchParams(url: URL, options?: Options, protect = false): URL {
-        if (protect) {
-            const key = this.getKey(options);
-            if (!key) throw apiKeyError;
-            url.searchParams.append("key", key);
-        }
-        if (options) {
-            if (options.addr) url.searchParams.append("addr", options.addr);
-            if (options.appid) url.searchParams.append("appid", options.appid.toString());
-            if (options.gameid) url.searchParams.append("gameid", options.gameid.toString());
-            if (options.steamids) url.searchParams.append("steamids", options.steamids.toString());
-            if (options.steamid) url.searchParams.append("steamid", options.steamid);
-            if (options.relationship) url.searchParams.append("relationship", options.relationship);
-            if (options.includeAppinfo) url.searchParams.append("include_appinfo", options.includeAppinfo.toString());
-            if (options.includePlayedFreeGames) url.searchParams.append("include_played_free_games", options.includePlayedFreeGames.toString());
-            if (options && options.lang) url.searchParams.append("L", options.lang);
-            if (options.count) url.searchParams.append("count", options.count.toString());
-            if (options.maxlength) url.searchParams.append("maxlength", options.maxlength.toString());
-            if (options.format) url.searchParams.append("format", options.format.toString());
-        }
-        return url;
-    }
-
-    private url(Interface: string, Method: string, Version: string = this.v): URL {
-        return new URL(`${this.b}/${Interface}/${Method}/${Version}`);
-    }
-
-    /**
-     * Get all steam applications data.
-     * @param {Format?} format
-     * @return {Output}
-     */
-    async GetAppList(format?: Format): Output {
-        const options: Options = { format: format }
-        let url = this.url("ISteamApps", "GetAppList");
-        url = this.searchParams(url, options);
-        const result = await request(url.toString(), this.getRequestInit(options)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
-
-    /**
-     * Get all steam application data from a server.
-     * @param {string!} addr IP adress of target server.
-     * @param {Format?} format
-     * @return {Output}
-     */
-    async GetServersAtAddress(addr?: string, format?: Format): Output {
-        const options: Options = { addr: addr, format: format }
-        let url = this.url("ISteamApps", "GetServersAtAddress", "v0001");
-        url = this.searchParams(url, options);
-        const result = await request(url.toString(), this.getRequestInit(options)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
-
-    /**
-     * Returns the latest news of a game specified by its appID.
-     * @param appid
-     * @param {GetNewsForAppOptions} options {
-     *      count?: number,         // How many news enties you want to get returned.
-     *      maxlength?: number,     // Maximum length of each news entry.
-     *      format?: Format
-     * }
-     * @return {Output}
-     */
-    async GetNewsForApp(appid: number, options?: GetNewsForAppOptions): Output {
-        const params: Options = { appid: appid, ...options };
-        let url = this.url("ISteamNews", "GetNewsForApp");
-        url = this.searchParams(url, params);
-        const result = await request(url.toString(), this.getRequestInit(options)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
-
-    /**
-     * Returns on global achievements overview of a specific game in percentages.
-     * @param {number!} gameid AppID of the game you want the news of.
-     * @param {Format?} format
-     * @return {Output}
-     */
-    async GetGlobalAchievementPercentagesForApp(gameid: number, format?: Format): Output {
-        const options: Options = { gameid: gameid, format: format };
-        let url = this.url("ISteamUserStats", "GetGlobalAchievementPercentagesForApp");
-        url = this.searchParams(url, options);
-        const result = await request(url.toString(), this.getRequestInit(options)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
+  /**
+   * It takes a URL, an optional Options object, and an optional boolean. It then appends the key,
+   * addr, appid, gameid, steamids, steamid, relationship, includeAppinfo, includePlayedFreeGames,
+   * lang, count, and maxlength properties of the Options object to the URL's search parameters. If
+   * the boolean is true, it will throw an error if the Options object doesn't have a key property.
+   * </code>
+   * @param {URL} url - URL - The URL to apply the options to.
+   * @param {Options} [options] - 
+   * @param [protect=false] - boolean - Whether or not to protect the request with an API key.
+   * @returns The URL object is being returned.
+   */
+  private applyOptions(url: URL, options?: Options, protect = false): URL {
+    if (protect) {
+      if (options && options.key) url.searchParams.append("key", options.key);
+      else if (this.apikey) url.searchParams.append("key", this.apikey);
+      else throw apiKeyError;
     }
     
-    /**
-     * Returns basic profile information for a list of 64-bit Steam IDs.
-     * @param {string[]!} steamids Comma-delimited list of 64 bit Steam IDs to return profile information for. Up to 100 Steam IDs can be requested.
-     * @param {Format?} format
-     * @return {Output}
-     */
-    async GetPlayerSummaries(steamids: string[], format?: Format): Output {
-        const options: Options = { steamids: steamids, format: format };
-        let url = this.url("ISteamUser", "GetPlayerSummaries");
-        url = this.searchParams(url, options, true);
-        const result = await request(url.toString(), this.getRequestInit(options)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
+    if (options) {
+      if (options.addr) url.searchParams.append("addr", options.addr);                  // GetServersAtAddress
+      if (options.gmsindex) url.searchParams.append("gmsindex", `${options.gmsindex}`); // GetServersAtAddress
+      if (options.appid) url.searchParams.append("appid", `${options.appid}`);          // GetServersAtAddress
+      if (options.gamedir) url.searchParams.append("gamedir", `${options.gamedir}`);    // GetServersAtAddress
+      if (options.region) url.searchParams.append("region", `${options.region}`);       // GetServersAtAddress
+      if (options.secure) url.searchParams.append("secure", `${options.secure}`);       // GetServersAtAddress
+      if (options.lan) url.searchParams.append("lan", `${options.lan}`);                // GetServersAtAddress
+      if (options.gameport) url.searchParams.append("gameport", `${options.gameport}`); // GetServersAtAddress
+      if (options.specport) url.searchParams.append("specport", `${options.specport}`); // GetServersAtAddress
 
-    /**
-     * Returns the friend list of any Steam user, provided his Steam Community profile visibility is set to "Public".
-     * @param {string!} steamid 64 bit Steam ID to return friend list for.
-     * @param {RelationShip!} relationship Relationship filter. Possibles values: all, friend.
-     * @param {Format?} format
-     * @return {Output}
-     */
-    async GetFriendList(steamid: string, relationship: RelationShip, format?: Format): Output {
-        const options: Options = { steamid: steamid, relationship: relationship, format: format };
-        let url = this.url("ISteamUser", "GetFriendList", "v0001");
-        url = this.searchParams(url, options, true);
-        const result = await request(url.toString(), this.getRequestInit(options)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
+      if (options.count) url.searchParams.append("count", options.count.toString());              // GetNewsForApp
+      if (options.maxlength) url.searchParams.append("maxlength", options.maxlength.toString());  // GetNewsForApp
 
-    /**
-     * Returns a list of achievements for this user by app id.
-     * @param {string!} steamid 64 bit Steam ID to return friend list for.
-     * @param {number!} appid The ID for the game you're requesting.
-     * @param {Options} options {
-     *      L?: string,             // Language. If specified, it will return language data for the requested language.
-     *      format?: Format
-     * }
-     * @return {Output}
-     */
-    async GetPlayerAchievements(steamid: string, appid: number, options?: PlayerAchievementsOptions): Output {
-        const params: Options = { steamid: steamid, appid: appid, ...options }
-        let url = this.url("ISteamUserStats", "GetPlayerAchievements", "v0001");
-        url = this.searchParams(url, params, true);
-        const result = await request(url.toString(), this.getRequestInit(params)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
+      if (options.gameid) url.searchParams.append("gameid", options.gameid.toString()); // GetGlobalAchievementPercentagesForApp
 
-    /**
-     * Returns a list of achievements for this user by app id.
-     * @param {string!} steamid 64 bit Steam ID to return friend list for.
-     * @param {number!} appid The ID for the game you're requesting.
-     * @param {UserStatsForGameOptions} options
-     * @return {Output}
-     */
-    async GetUserStatsForGame(steamid: string, appid: number, options?: UserStatsForGameOptions): Output {
-        const params: Options = { steamid: steamid, appid: appid, ...options }
-        let url = this.url("ISteamUserStats", "GetUserStatsForGame");
-        url = this.searchParams(url, params, true);
-        const result = await request(url.toString(), this.getRequestInit(params)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
+      if (options.steamids) url.searchParams.append("steamids", options.steamids.toString()); // GetPlayerSummaries
 
-    /**
-     * Returns number of current players by app id.
-     * @param {number!} appid The ID for the game you're requesting.
-     * @param {Format} format
-     * @return {Output}
-     */
-    async GetNumberOfCurrentPlayers(appid: number, format?: Format): Output {
-        const params: Options = { appid: appid, format: format };
-        let url = this.url("ISteamUserStats", "GetNumberOfCurrentPlayers", "v0001");
-        url = this.searchParams(url, params);
-        const result = await request(url.toString(), this.getRequestInit(params)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
+      if (options.steamid) url.searchParams.append("steamid", options.steamid); // GetFriendList, 
+      if (options.relationship) url.searchParams.append("relationship", options.relationship); // GetFriendList
 
-    /**
-     * Returns a list of games a player owns along with some playtime information.
-     * @param {string!} steamid 64 bit Steam ID to return friend list for.
-     * @param {OwnedGamesOptions} options
-     * @return {Output}
-     */
-    async GetOwnedGames(steamid: string, options?: OwnedGamesOptions): Output {
-        const params: Options = { steamid: steamid, ...options }
-        let url = this.url("IPlayerService", "GetOwnedGames", "v0001");
-        url = this.searchParams(url, params, true);
-        const result = await request(url.toString(), this.getRequestInit(params)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
-    }
+      if (options.appid) url.searchParams.append("appid", options.appid.toString());
+      
+      if (options.include_appinfo) url.searchParams.append("include_appinfo", options.include_appinfo.toString()); // GetOwnedGames
+      if (options.include_played_free_games) url.searchParams.append("include_played_free_games", options.include_played_free_games.toString()); // GetOwnedGames
+      // if (options.appids_filter) url.searchParams.append("input_json", encodeURI(JSON.stringify({ appids_filter: options.appids_filter}))); // GetOwnedGames
 
-    /**
-     * Returns a list of games a player has played in the last two weeks.
-     * @param {string!} steamid 64 bit Steam ID to return friend list for.
-     * @param {RecentlyPlayedGamesOptions} options
-     * @return {Output}
-     */
-    async GetRecentlyPlayedGames(steamid: string, options?: RecentlyPlayedGamesOptions): Output { // steamid, count, format
-        const params: Options = { steamid: steamid, ...options };
-        let url = this.url("IPlayerService", "GetRecentlyPlayedGames", "v0001");
-        url = this.searchParams(url, params, true);
-        const result = await request(url.toString(), this.getRequestInit(params)).catch((error: Error) => { throw error; });
-        return (result.unwrap().body) ? result.unwrap().body : void 0;
+      if (options && options.lang) url.searchParams.append("l", options.lang); // GetPlayerAchievements, GetUserStatsForGame
     }
+    return url;
+  }
+
+  async request(url: string, options?: Options): TResultAsync<httpResponse, Error> {
+    try {
+      const result = await fetch(url, options?.requestInit || this.defaultRequestInit);
+      const { status, headers } = result;
+      if (status !== 200) {
+        const body = (headers.has("content-type"))
+        ? (await result.text())
+        : void 0;
+        return fail(new Error(body))
+      } else {
+        const contentType = headers.get("content-type");
+        if (contentType && contentType.search("json") === -1) return fail(new Error(await result.text()))
+        const body = await result.json();
+        if (!body) return fail(new Error("Unresolvable response!"))
+        return ok({ status, headers, body: body });
+      }
+    } catch (error) {
+      return fail(error);
+    }
+  }
+
+  /**
+   * It takes an optional parameter of type Options, and returns a Promise of type App[]
+   * @param {Options?} [options] - Options
+   * @returns An array of App objects.
+   */
+  async GetAppList(options?: BaseOptions): Promise<App[]> {
+    let url = createUrl("ISteamApps", "GetAppList");
+    url = this.applyOptions(url, options);
+    const result = await this.request(url.toString(), options).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const apps: any = (result.unwrap().body as any)?.applist?.apps;
+    if (!apps) throw new Error(`Response body is invalid!`);
+    return apps;
+  }
+
+  /**
+   * "This function returns a list of servers that are running on the specified IP address."
+   * @param {string!} [addr] - The IP address of the server.
+   * @param {GetServersAtAddressOptions?} [options] - Options
+   * @returns An array of servers.
+   */
+  async GetServersAtAddress(addr?: string, options?: GetServersAtAddressOptions): Promise<Server[]> {
+    const params: Options = { addr: addr, ...options }
+    let url = createUrl("ISteamApps", "GetServersAtAddress", "v0001");
+    url = this.applyOptions(url, params);
+    const result = await this.request(url.toString(), options).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any)?.response;
+    if (!response || typeof response === "string" || !response.servers) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const servers: Server[] = response.servers;
+      return servers;
+    }
+  }
+
+  /**
+   * "This function returns an array of News, which are the news items for the specified appid."
+   * 
+   * The first line of the function is the function signature. It's a function that returns a promise
+   * of an array of News objects. The function takes an appid and an optional options object
+   * @param {number!} appid - The appid of the game you want to get news for.
+   * @param {GetNewsForAppOptions?} [options] - GetNewsForAppOptions
+   * @returns An array of News objects.
+   */
+  async GetNewsForApp(appid: number, options?: GetNewsForAppOptions): Promise<News[]> {
+    const params: Options = { appid: appid, ...options };
+    let url = createUrl("ISteamNews", "GetNewsForApp");
+    url = this.applyOptions(url, params);
+    const result = await this.request(url.toString(), options).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).appnews;
+    if (!response || typeof response === "string" || !response.newsitems) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const news: News[] = response.newsitems;
+      return news;
+    }
+  }
+
+  /**
+   * It gets the global achievement percentages for a specific game.
+   * @param {number!} gameid - The game's appid.
+   * @param {Options?} [options] - Options
+   * @returns An array of Achievement.
+   */
+  async GetGlobalAchievementPercentagesForApp(gameid: number, options?: Options): Promise<Achievement[]> {
+    const params: Options = { gameid: gameid, ...options };
+    let url = createUrl("ISteamUserStats", "GetGlobalAchievementPercentagesForApp");
+    url = this.applyOptions(url, params);
+    const result = await this.request(url.toString(), options).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).achievementpercentages;
+    if (!response || typeof response === "string" || !response.achievements) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const achievements: Achievement[] = response.achievements;
+      return achievements;
+    }
+  }
+
+  /**
+   * "GetPlayerSummaries returns a list of player summaries for the given steamids."
+   * 
+   * The function takes two arguments:
+   * 1. steamids: string[] | string
+   * 2. options?: Options
+   * 
+   * The first argument is a list of steamids or a single steamid.
+   * The second argument is an optional object that can be used to pass additional parameters to the
+   * function
+   * @param {string[] | string} steamids - string[] | string
+   * @param {Options} [options] - Options
+   * @returns a promise that resolves to an array of Player objects or a single Player object.
+   */
+  async GetPlayerSummaries(steamids: string[] | string, options?: Options): Promise<Player[] | Player> {
+    const params: Options = {
+      steamids: (Array.isArray(steamids)) ? steamids : [steamids],
+      ...options
+    };
+    let url = createUrl("ISteamUser", "GetPlayerSummaries");
+    url = this.applyOptions(url, params, true);
+    const result = await this.request(url.toString(), options).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any)?.response;
+    if (!response || typeof response === "string" || !response.players) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const players: Player[] = response.players;
+      return (Array.isArray(steamids)) ? players : players[0] || null;
+    }
+  }
+
+  /**
+   * It takes a steamid, a relationship, and an optional options object, and returns a promise that
+   * resolves to an array of Friend objects
+   * @param {string} steamid - The SteamID of the user you want to get the friend list of.
+   * @param {RelationShip} relationship - RelationShip
+   * @param {Options} [options] - Options
+   * @returns An array of objects.
+   */
+  async GetFriendList(steamid: string, relationship: RelationShip, options?: Options): Promise<Friend[]> {
+    const params = { steamid: steamid, relationship: relationship, ...options };
+    let url = createUrl("ISteamUser", "GetFriendList", "v0001");
+    url = this.applyOptions(url, params, true);
+    const result = await this.request(url.toString(), options).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).friendslist;
+    if (!response || typeof response === "string" || !response.friends) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const friends: Friend[] = response.friends;
+      return friends;
+    }
+  }
+
+  /**
+   * This function returns an array of PlayerAchievement objects, which contain the achievement name,
+   * achievement description, and whether or not the player has unlocked the achievement.
+   * @param {string} steamid - The SteamID of the user you want to get the achievements for.
+   * @param {number} appid - The appid of the game you want to get the achievements for.
+   * @param {PlayerAchievementsOptions} [options] - PlayerAchievementsOptions
+   * @returns An array of PlayerAchievement objects.
+   */
+  async GetPlayerAchievements(steamid: string, appid: number, options?: PlayerAchievementsOptions): Promise<PlayerAchievement[]> {
+    const params = { steamid: steamid, appid: appid, ...options }
+    let url = createUrl("ISteamUserStats", "GetPlayerAchievements", "v0001");
+    url = this.applyOptions(url, params, true);
+    const result = await this.request(url.toString(), params).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).playerstats;
+    if (!response || typeof response === "string" || !response.achievements) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const achievements: PlayerAchievement[] = response.achievements;
+      return achievements;
+    }
+  }
+
+  /**
+   * "GetUserStatsForGame() is a function that takes in a steamid and an appid and returns a
+   * PlayerStat object."
+   * 
+   * The first line of the function is the function declaration. It's a function that returns a
+   * Promise of a PlayerStat object
+   * @param {string} steamid - The SteamID of the user.
+   * @param {number} appid - The appid of the game you want to get the stats for.
+   * @param {UserStatsForGameOptions} [options] - UserStatsForGameOptions
+   * @returns The response is a JSON object that contains a playerstats object.
+   */
+  async GetUserStatsForGame(steamid: string, appid: number, options?: UserStatsForGameOptions): Promise<PlayerStat> {
+    const params: Options = { steamid: steamid, appid: appid, ...options }
+    let url = createUrl("ISteamUserStats", "GetUserStatsForGame");
+    url = this.applyOptions(url, params, true);
+    const result = await this.request(url.toString(), params).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any);
+    if (!response || typeof response === "string" || !response.playerstats) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const playerstats: PlayerStat = response.playerstats;
+      return playerstats;
+    }
+  }
+
+  /**
+   * This function returns the number of players currently playing the game with the specified appid.
+   * @param {number} appid - number - The appid of the game you want to get the number of current
+   * players for.
+   * @param {Options} [options] - Options
+   * @returns The number of players currently playing the game.
+   */
+  async GetNumberOfCurrentPlayers(appid: number, options?: Options): Promise<number> {
+    const params: Options = { appid: appid, ...options };
+    let url = createUrl("ISteamUserStats", "GetNumberOfCurrentPlayers", "v0001");
+    url = this.applyOptions(url, params);
+    const result = await this.request(url.toString(), params).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).response;
+    if (!response || typeof response === "string" || !response.player_count) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const player_count: number = response.player_count;
+      return player_count;
+    }
+  }
+
+  /**
+   * This function takes a steamid and an optional OwnedGamesOptions object and returns a promise
+   * that resolves to an OwnedGames object.
+   * @param {string} steamid - string - The SteamID of the user to retrieve the owned games for.
+   * @param {OwnedGamesOptions} [options] - OwnedGamesOptions
+   * @returns The response is a JSON object.
+   */
+  async GetOwnedGames(steamid: string, options?: OwnedGamesOptions): Promise<OwnedGames> {
+    const params: Options = { steamid: steamid, ...options }
+    let url = createUrl("IPlayerService", "GetOwnedGames", "v0001");
+    url = this.applyOptions(url, params, true);
+    if (params.appids_filter) console.warn("\"appids_filter\": This parameter is currently not supported, comming soon.")
+    const result = await this.request(url.toString(), params).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).response;
+    if (!response || typeof response === "string") throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const ownedGames: OwnedGames = response;
+      return ownedGames;
+    }
+  }
+
+  /**
+   * It takes a steamid and an optional object of options and returns a promise of a
+   * RecentlyPlayedGames object
+   * @param {string} steamid - The SteamID of the user to get recently played games for.
+   * @param {RecentlyPlayedGamesOptions} [options] - RecentlyPlayedGamesOptions
+   * @returns An object with the following properties:
+   */
+  async GetRecentlyPlayedGames(steamid: string, options?: RecentlyPlayedGamesOptions): Promise<RecentlyPlayedGames> { // steamid, count, format
+    const params: Options = { steamid: steamid, ...options };
+    let url = createUrl("IPlayerService", "GetRecentlyPlayedGames", "v0001");
+    url = this.applyOptions(url, params, true);
+    const result = await this.request(url.toString(), params).catch((error: Error) => { throw error; });
+    // deno-lint-ignore no-explicit-any
+    const response: any = (result.unwrap().body as any).response;
+    if (!response || typeof response === "string" || !response) throw new Error(`Response body is invalid!\n${response}`);
+    else {
+      const recentlyPlayedGames: RecentlyPlayedGames = response;
+      return recentlyPlayedGames;
+    }
+  }
 }
