@@ -140,7 +140,7 @@ export type OwnedGame = {
 }
 export type OwnedGames = {
   game_count: number;
-  game: OwnedGame[];
+  games: OwnedGame[];
 }
 
 export type RecentlyPlayedGame = {
